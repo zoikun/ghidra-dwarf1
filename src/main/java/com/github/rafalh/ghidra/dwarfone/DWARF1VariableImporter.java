@@ -10,7 +10,6 @@ import com.github.rafalh.ghidra.dwarfone.model.Tag;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.data.DataType;
-import ghidra.program.model.data.DataTypeConflictException;
 import ghidra.program.model.symbol.SourceType;
 import ghidra.program.model.util.CodeUnitInsertionException;
 import ghidra.util.exception.InvalidInputException;
@@ -52,6 +51,9 @@ public class DWARF1VariableImporter {
 		}
 		// Create symbol
 		Address addr = dwarfProgram.toAddr(offset);
+		if (addr.getOffset() == 0xFFFFFFFFL) {
+			return;
+		}
 		try {
 			dwarfProgram.getProgram().getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
 		} catch (InvalidInputException e) {
@@ -64,7 +66,7 @@ public class DWARF1VariableImporter {
 				// a bit brutal... there should be an option for clearing
 				dwarfProgram.getProgram().getListing().clearCodeUnits(addr, addr.add(dt.getLength() - 1), false);
 				dwarfProgram.getProgram().getListing().createData(addr, dt);
-			} catch (CodeUnitInsertionException | DataTypeConflictException e) {
+			} catch (CodeUnitInsertionException e) {
 				log.appendException(e);
 			}
 		}

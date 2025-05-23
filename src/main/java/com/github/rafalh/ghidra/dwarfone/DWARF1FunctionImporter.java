@@ -116,6 +116,9 @@ public class DWARF1FunctionImporter {
 		}
 		
 		Address minAddr = dwarfProgram.toAddr(lowPc);
+		if (minAddr.getOffset() == 0xFFFFFFFFL) {
+			return;
+		}
 		Address maxAddr = dwarfProgram.toAddr(highPc - 1);
 		AddressSetView funBody = dwarfProgram.getProgram().getAddressFactory().getAddressSet(minAddr, maxAddr);
 		Iterator<Function> overlappingFunIt = functionManager.getFunctionsOverlapping(funBody);

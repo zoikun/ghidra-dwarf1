@@ -40,6 +40,8 @@ public enum Tag {
 	SET_TYPE(0x0020),
 	SUBRANGE_TYPE(0x0021),
 	WITH_STMT(0x0022),
+	GCC_FUNCTION_TEMPLATE(0x8002),
+	GCC_Class_TEMPLATE(0x8003),
 	USER(null);
 	
 	private Integer value;

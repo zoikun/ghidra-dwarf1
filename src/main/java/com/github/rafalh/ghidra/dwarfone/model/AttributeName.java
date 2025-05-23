@@ -49,6 +49,10 @@ public enum AttributeName {
 	STRIDE_SIZE(0x02E0),
 	UPPER_BOUND(0x02F0),
 	VIRTUAL(0x0300),
+	GCC_SF_NAME(0x8000),
+	GCC_SF_INFO(0x8010),
+	GCC_BODY_BEGIN(0x8040),
+	GCC_BODY_END(0x8050),
 	USER(null);
 
 	public static final int MASK = 0xFFF0;
