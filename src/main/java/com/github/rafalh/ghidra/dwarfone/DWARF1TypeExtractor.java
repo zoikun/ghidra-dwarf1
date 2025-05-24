@@ -20,6 +20,7 @@ import ghidra.app.util.bin.ByteArrayProvider;
 import ghidra.app.util.importer.MessageLog;
 import ghidra.program.model.data.DataType;
 import ghidra.program.model.data.PointerDataType;
+import ghidra.program.model.data.VoidDataType;
 
 public class DWARF1TypeExtractor {
 
@@ -59,8 +60,8 @@ public class DWARF1TypeExtractor {
 		if (modUserDefTypeOpt.isPresent()) {
 			return decodeModUserDefType(modUserDefTypeOpt.get());
 		}
-		log.appendMsg("Unknown type " + die);
-		return DataType.DEFAULT;
+//		log.appendMsg("Unknown type " + die);
+		return VoidDataType.dataType;
 	}
 	
 	DataType extractDataType(AttributeName at, AttributeValue av) {

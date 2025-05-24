@@ -73,11 +73,11 @@ public enum AttributeName {
 	}
 	
 	public static AttributeName decode(int value) {
-		if (value >= LO_USER && value <= HI_USER) {
-			return USER;
-		}
 		AttributeName at = VALUE_MAP.get(value);
 		if (at == null) {
+			if (value >= LO_USER && value <= HI_USER) {
+				return USER;
+			}
 			throw new IllegalArgumentException("invalid attribute value " + value);
 		}
 		return at;

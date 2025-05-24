@@ -68,7 +68,7 @@ public class DWARF1TypeImporter {
                 case ARRAY_TYPE:
                     return processArrayType(die);
                 case SUBROUTINE_TYPE:
-                    return processSubrountineType(die);
+                    return processSubroutineType(die);
                 case TYPEDEF:
                 case STRING_TYPE:
                 case POINTER_TYPE:
@@ -86,7 +86,7 @@ public class DWARF1TypeImporter {
         }
     }
 
-    private DataType processSubrountineType(DebugInfoEntry die) {
+    private DataType processSubroutineType(DebugInfoEntry die) {
         // Note: this is a function type, not a pointer to function type
         DataType returnDt = typeExtractor.extractDataType(die);
         List<ParameterDefinition> params = new ArrayList<>();
@@ -139,6 +139,19 @@ public class DWARF1TypeImporter {
                 int maxIndex = br.readNextInt();
                 int numElements = maxIndex - minIndex + 1;
                 dims.add(numElements);
+            } else if (fmt == Format.FT_C_X) {
+                // type of index - unused
+                FundamentalType.fromValue(br.readNextUnsignedShort());
+                int minIndex = br.readNextInt();
+                int size = br.readNextUnsignedShort();
+                if (size == 0) {
+                    int location = 0;
+                }
+                else {
+                    // TODO
+                    long block = br.readNextValue(size);
+//                    int location = processBlock(block);
+                }
             } else {
                 log.appendMsg("Unsupported format " + fmt + " in " + die);
                 break;
@@ -166,15 +179,11 @@ public class DWARF1TypeImporter {
 
     private DataType processClassType(DebugInfoEntry die) {
         Optional<Number> byteSizeOpt =
-                die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
-        if (byteSizeOpt.isEmpty()) {
-            throw new IllegalArgumentException("class type is missing byte size attribute");
-        }
+                die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(ConstAttributeValue::get);
         String name = DWARF1ImportUtils.extractName(die)
                 // FIXME: anonymous class?
                 .filter(n -> !n.equals("@class"))
                 .orElseGet(() -> "anon_" + die.getRef());
-        int size = byteSizeOpt.get().intValue();
         DataTypeManager dataTypeManager = program.getDataTypeManager();
         DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
         if (existingDt != null) {
@@ -182,6 +191,12 @@ public class DWARF1TypeImporter {
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
+        // We check this here instead of at the beginning of the function
+        // because GCC can emit structs multiple times where some of the bodies are empty
+        if (byteSizeOpt.isEmpty()) {
+            throw new IllegalArgumentException("class type is missing byte size attribute");
+        }
+        int size = byteSizeOpt.get().intValue();
         StructureDataType tempDt = new StructureDataType(categoryPath, name, size, dataTypeManager);
         // Register the type before importing fields because field can reference parent type
         Structure newDt = (Structure) dataTypeManager.addDataType(tempDt, DataTypeConflictHandler.DEFAULT_HANDLER);

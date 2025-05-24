@@ -32,15 +32,15 @@ public enum LocationAtomOp {
 	}
 	
 	public static LocationAtomOp decode(int value) {
-		if (value >= LO_USER && value <= HI_USER) {
-			return USER;
-		}
-		// PS2 GCC uses 0x80 sometimes in local variables
-		if (value == 0x80) {
-			return USER;
-		}
 		LocationAtomOp op = VALUE_MAP.get(value);
 		if (op == null) {
+			if (value >= LO_USER && value <= HI_USER) {
+				return USER;
+			}
+			// PS2 GCC uses 0x80 sometimes in local variables
+			if (value == 0x80) {
+				return USER;
+			}
 			throw new IllegalArgumentException("invalid location atom " + value);
 		}
 		return op;

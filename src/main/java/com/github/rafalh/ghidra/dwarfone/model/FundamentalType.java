@@ -28,6 +28,10 @@ public enum FundamentalType {
 	BOOLEAN(0x0015),
 	EXT_PREC_COMPLEX(0x0016),
 	LABEL(0x0017),
+	LONG_LONG(0x8008),
+	SIGNED_LONG_LONG(0x8108),
+	UNSIGNED_LONG_LONG(0x8208),
+
 	USER(null);
 
 	private static final int LO_USER = 0x8000;
@@ -47,11 +51,11 @@ public enum FundamentalType {
 	}
 	
 	public static FundamentalType fromValue(int value) {
-		if (value >= LO_USER && value <= HI_USER) {
-			return USER;
-		}
 		FundamentalType ft = VALUE_MAP.get(value);
 		if (ft == null) {
+			if (value >= LO_USER && value <= HI_USER) {
+				return USER;
+			}
 			throw new IllegalArgumentException("invalid fundamental type " + value);
 		}
 		return ft;

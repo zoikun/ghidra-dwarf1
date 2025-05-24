@@ -38,9 +38,9 @@ public class DWARF1VariableImporter {
 		if (offsetOpt.isEmpty()) {
 			return;
 		}
-		Long offset = offsetOpt.get();
+		long offset = offsetOpt.get();
 		//log.appendMsg(name + " " + Long.toHexString(offset));
-		if (offset == 0) {
+		if (offset == 0 || offset == -1) {
 			//log.appendMsg("Skipping variable with null address: " + name);
 			return;
 		}
@@ -51,9 +51,6 @@ public class DWARF1VariableImporter {
 		}
 		// Create symbol
 		Address addr = dwarfProgram.toAddr(offset);
-		if (addr.getOffset() == 0xFFFFFFFFL) {
-			return;
-		}
 		try {
 			dwarfProgram.getProgram().getSymbolTable().createLabel(addr, name, SourceType.IMPORTED);
 		} catch (InvalidInputException e) {

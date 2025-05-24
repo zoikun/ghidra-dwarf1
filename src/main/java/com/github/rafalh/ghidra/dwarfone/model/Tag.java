@@ -41,7 +41,7 @@ public enum Tag {
 	SUBRANGE_TYPE(0x0021),
 	WITH_STMT(0x0022),
 	GCC_FUNCTION_TEMPLATE(0x8002),
-	GCC_Class_TEMPLATE(0x8003),
+	GCC_CLASS_TEMPLATE(0x8003),
 	USER(null);
 	
 	private Integer value;
@@ -61,11 +61,11 @@ public enum Tag {
 	}
 	
 	public static Tag decode(int value) {
-		if (value >= LO_USER && value <= HI_USER) {
-			return USER;
-		}
 		Tag tag = VALUE_MAP.get(value);
 		if (tag == null) {
+			if (value >= LO_USER && value <= HI_USER) {
+				return USER;
+			}
 			throw new IllegalArgumentException("invalid tag value " + value);
 		}
 		return tag;
