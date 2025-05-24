@@ -140,7 +140,7 @@ public class DWARF1FunctionImporter {
 
             Variable returnParam = new ReturnParameterImpl(returnDt, dwarfProgram.getProgram());
             List<Variable> params = new ArrayList<>();
-            List<Variable> localVariables = new ArrayList<>();
+            Map<Register, Variable> regVariables = new HashMap<>();
 
             for (DebugInfoEntry childDie : die.getChildren()) {
                 switch (childDie.getTag()) {
@@ -154,22 +154,32 @@ public class DWARF1FunctionImporter {
                         Optional<LocationDescription> locationOptional =
                                 DWARF1ImportUtils.extractLocation(childDie, dwarfProgram);
                         if (varNameOptional.isEmpty() || locationOptional.isEmpty()) {
-                            return;
+                            continue;
                         }
                         String varName = varNameOptional.get();
                         LocationDescription varLocation = locationOptional.get();
                         DataType varDt = typeExtractor.extractDataType(childDie);
-                        // TODO can there be multiple atoms?
-                        Optional<LocationAtom> atomOptional = varLocation.getAtoms().stream().findFirst();
-                        if (atomOptional.isEmpty()) {
-                            return;
+                        List<LocationAtom> atoms = varLocation.getAtoms();
+                        if (atoms.isEmpty()) {
+                            continue;
                         }
-                        LocationAtom atom = atomOptional.get();
-                        switch (atom.getOp()) {
+                        switch (atoms.get(0).getOp()) {
                             case REG -> {
-                                Register reg = dwarfProgram.getProgram().getRegister("r" + atom.getArg());
-                                Variable var = new LocalVariableImpl(varName, 0, varDt, reg, dwarfProgram.getProgram(), SourceType.IMPORTED);
-                                localVariables.add(var);
+                                Register reg = dwarfProgram.getProgram().getRegister("r" + atoms.get(0).getArg());
+                                Variable var = new LocalVariableImpl(varName, 0, varDt, reg, dwarfProgram.getProgram(),
+                                        SourceType.IMPORTED);
+                                regVariables.put(reg, var);
+                            }
+                            case BASEREG -> {
+                                if (atoms.size() == 3 && atoms.get(1).getOp() == LocationAtomOp.CONST &&
+                                        atoms.get(2).getOp() == LocationAtomOp.ADD) {
+                                    int stackOffset = atoms.get(1).getArg().intValue();
+                                    Variable var =
+                                            new LocalVariableImpl(varName, varDt, stackOffset,
+                                                    dwarfProgram.getProgram(),
+                                                    SourceType.IMPORTED);
+                                    fun.addLocalVariable(var, SourceType.IMPORTED);
+                                }
                             }
                         }
                         break;
@@ -185,19 +195,18 @@ public class DWARF1FunctionImporter {
             fun.updateFunction(null, returnParam, params, FunctionUpdateType.DYNAMIC_STORAGE_FORMAL_PARAMS, true,
                     SourceType.IMPORTED);
 
+            // this takes long, but when updating through a normal function,
+            // the decompiler doesn't pick up the changes and the variables get duplicated, etc.
             HighFunction highFunc = dif.decompileFunction(fun, 60, monitor).getHighFunction();
 
             for (Iterator<HighSymbol> it = highFunc.getLocalSymbolMap().getSymbols(); it.hasNext(); ) {
                 HighSymbol sym = it.next();
                 VariableStorage storage = sym.getStorage();
 
-                // TODO do stack variables
-                if (storage.getRegister() != null) {
-                    var vOptional = localVariables.stream().filter(v -> storage.getRegister().equals(v.getRegister())).findAny();
-                    if (vOptional.isPresent()) {
-                        Variable v = vOptional.get();
+                if (storage.isRegisterStorage()) {
+                    var v = regVariables.get(storage.getRegister());
+                    if (v != null) {
                         HighFunctionDBUtil.updateDBVariable(sym, v.getName(), v.getDataType(), SourceType.IMPORTED);
-                            localVariables.remove(v);
                     }
                 }
             }
