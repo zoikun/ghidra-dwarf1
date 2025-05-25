@@ -5,7 +5,9 @@ import java.util.*;
 import com.github.rafalh.ghidra.dwarfone.model.*;
 
 import ghidra.app.decompiler.DecompInterface;
+import ghidra.app.util.CommentTypes;
 import ghidra.app.util.importer.MessageLog;
+import ghidra.app.util.viewer.field.CommentUtils;
 import ghidra.program.database.function.OverlappingFunctionException;
 import ghidra.program.model.address.Address;
 import ghidra.program.model.address.AddressSetView;
@@ -150,44 +152,18 @@ public class DWARF1FunctionImporter {
                         params.add(new ParameterImpl(paramName, dt, dwarfProgram.getProgram()));
                         break;
                     case LOCAL_VARIABLE:
-                        Optional<String> varNameOptional = DWARF1ImportUtils.extractName(childDie);
-                        Optional<LocationDescription> locationOptional =
-                                DWARF1ImportUtils.extractLocation(childDie, dwarfProgram);
-                        if (varNameOptional.isEmpty() || locationOptional.isEmpty()) {
-                            continue;
-                        }
-                        String varName = varNameOptional.get();
-                        LocationDescription varLocation = locationOptional.get();
-                        DataType varDt = typeExtractor.extractDataType(childDie);
-                        List<LocationAtom> atoms = varLocation.getAtoms();
-                        if (atoms.isEmpty()) {
-                            continue;
-                        }
-                        switch (atoms.get(0).getOp()) {
-                            case REG -> {
-                                Register reg = dwarfProgram.getProgram().getRegister("r" + atoms.get(0).getArg());
-                                Variable var = new LocalVariableImpl(varName, 0, varDt, reg, dwarfProgram.getProgram(),
-                                        SourceType.IMPORTED);
-                                regVariables.put(reg, var);
-                            }
-                            case BASEREG -> {
-                                if (atoms.size() == 3 && atoms.get(1).getOp() == LocationAtomOp.CONST &&
-                                        atoms.get(2).getOp() == LocationAtomOp.ADD) {
-                                    int stackOffset = atoms.get(1).getArg().intValue();
-                                    Variable var =
-                                            new LocalVariableImpl(varName, varDt, stackOffset,
-                                                    dwarfProgram.getProgram(),
-                                                    SourceType.IMPORTED);
-                                    fun.addLocalVariable(var, SourceType.IMPORTED);
-                                }
-                            }
-                        }
+                        importLocalVariables(childDie, fun, regVariables, false);
                         break;
                     case LEXICAL_BLOCK:
-                        // TODO add comment at beginning and end of block
+                        addComment(childDie, "scope {", true);
+                        handleNestedBlock(childDie, fun, regVariables, false);
+                        addComment(childDie, "scope }", false);
                         break;
                     case INLINED_SUBROUTINE:
-                        // TODO add comment
+                        Optional<String> inlineNameOptional = extractInlineName(childDie);
+                        inlineNameOptional.ifPresent(s -> addComment(childDie, s + " {", true));
+                        handleNestedBlock(childDie, fun, regVariables, true);
+                        inlineNameOptional.ifPresent(s -> addComment(childDie, s + " }", false));
                         break;
                 }
             }
@@ -216,6 +192,75 @@ public class DWARF1FunctionImporter {
         }
     }
 
+    private void handleNestedBlock(DebugInfoEntry die, Function fun, Map<Register, Variable> regVariables, boolean inlined)
+            throws InvalidInputException, DuplicateNameException {
+        for (DebugInfoEntry childDie : die.getChildren()) {
+            switch (childDie.getTag()) {
+                case LOCAL_VARIABLE:
+                    importLocalVariables(childDie, fun, regVariables, inlined);
+                    break;
+                case LEXICAL_BLOCK:
+                    addComment(childDie, "scope {", true);
+                    handleNestedBlock(childDie, fun, regVariables, inlined);
+                    addComment(childDie, "scope }", false);
+                    break;
+                case INLINED_SUBROUTINE:
+                    Optional<String> inlineNameOptional = extractInlineName(childDie);
+                    inlineNameOptional.ifPresent(s -> addComment(childDie, s + " {", true));
+                    handleNestedBlock(childDie, fun, regVariables, true);
+                    inlineNameOptional.ifPresent(s -> addComment(childDie, s + " }", false));
+                    break;
+            }
+        }
+    }
+
+    private void importLocalVariables(DebugInfoEntry die, Function fun, Map<Register, Variable> regVariables,
+                                      boolean inlined)
+            throws InvalidInputException, DuplicateNameException {
+        Optional<String> varNameOptional = DWARF1ImportUtils.extractName(die);
+        Optional<LocationDescription> locationOptional =
+                DWARF1ImportUtils.extractLocation(die, dwarfProgram);
+        if (varNameOptional.isEmpty() || locationOptional.isEmpty()) {
+            return;
+        }
+        String varName = varNameOptional.get();
+        if (inlined) {
+            varName = "inlined_" + varName;
+        }
+        LocationDescription varLocation = locationOptional.get();
+        DataType varDt = typeExtractor.extractDataType(die);
+        List<LocationAtom> atoms = varLocation.getAtoms();
+        if (atoms.isEmpty()) {
+            return;
+        }
+        switch (atoms.get(0).getOp()) {
+            case REG -> {
+                Register reg = dwarfProgram.getProgram().getRegister("r" + atoms.get(0).getArg());
+                // maybe we can be smarter than 0?
+                Variable var = new LocalVariableImpl(varName, 0, varDt, reg, dwarfProgram.getProgram(),
+                        SourceType.IMPORTED);
+                regVariables.put(reg, var);
+            }
+            case BASEREG -> {
+                if (atoms.size() == 3 && atoms.get(1).getOp() == LocationAtomOp.CONST &&
+                        atoms.get(2).getOp() == LocationAtomOp.ADD) {
+                    int stackOffset = atoms.get(1).getArg().intValue();
+                    Variable var =
+                            new LocalVariableImpl(varName, varDt, stackOffset,
+                                    dwarfProgram.getProgram(),
+                                    SourceType.IMPORTED);
+                    fun.addLocalVariable(var, SourceType.IMPORTED);
+                }
+            }
+        }
+    }
+
+    private Optional<String> extractInlineName(DebugInfoEntry die) {
+        Optional<DebugInfoEntry> inline = die.<RefAttributeValue>getAttribute(AttributeName.SPECIFICATIONREFERENCE)
+                .map(RefAttributeValue::get).flatMap(dwarfProgram::getDebugInfoEntry);
+        return inline.flatMap(DWARF1ImportUtils::extractName);
+    }
+
     private Optional<DataType> determineMemberClassType(DebugInfoEntry die) {
         // Function defined in class body
         if (die.getParent().getTag() == Tag.CLASS_TYPE) {
@@ -239,5 +284,38 @@ public class DWARF1FunctionImporter {
             }
         }
         return Optional.empty();
+    }
+
+    private void addComment(DebugInfoEntry die, String comment, boolean beginning) {
+        if (beginning) {
+            Optional<AddrAttributeValue> lowPcAttributeOptional = die.getAttribute(AttributeName.LOW_PC);
+            if (lowPcAttributeOptional.isEmpty()) {
+                return;
+            }
+            long lowPc = lowPcAttributeOptional.get().get();
+            if (lowPc == 0xFFFFFFFFL) {
+                return;
+            }
+            Address minAddr = dwarfProgram.toAddr(lowPc);
+            addCommentAtAddress(minAddr, comment);
+        } else {
+            Optional<AddrAttributeValue> highPcAttributeOptional = die.getAttribute(AttributeName.HIGH_PC);
+
+            if (highPcAttributeOptional.isEmpty()) {
+                return;
+            }
+            long highPc = highPcAttributeOptional.get().get();
+            Address maxAddr = dwarfProgram.toAddr(highPc);
+            addCommentAtAddress(maxAddr, comment);
+        }
+    }
+
+    private void addCommentAtAddress(Address addr, String comment) {
+        Listing listing = dwarfProgram.getProgram().getListing();
+        String existing = listing.getComment(CodeUnit.PRE_COMMENT, addr);
+        if (existing != null) {
+            comment = existing + "\n" + comment;
+        }
+        listing.setComment(addr, CodeUnit.PRE_COMMENT, comment);
     }
 }
