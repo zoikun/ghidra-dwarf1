@@ -30,6 +30,8 @@ public class LocationDescription {
 			case BASEREG:
 			case ADDR: 
 			case CONST: 
+			case FPREG:
+			case FPDREG:
 				arg = (long) br.readNextInt();
 				break;
 			default:

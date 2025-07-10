@@ -37,6 +37,7 @@ import ghidra.program.model.data.Structure;
 import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Union;
 import ghidra.program.model.data.UnionDataType;
+import ghidra.program.model.data.VoidDataType;
 
 public class DWARF1TypeImporter {
 
@@ -150,7 +151,7 @@ public class DWARF1TypeImporter {
                 else {
                     // TODO
                     long block = br.readNextValue(size);
-//                    int location = processBlock(block);
+//                    int location = processBlock(block);
                 }
             } else {
                 log.appendMsg("Unsupported format " + fmt + " in " + die);
@@ -168,7 +169,7 @@ public class DWARF1TypeImporter {
             }
             if (dim == 0) {
                 // Ghidra does not support array data type with length 0 so return it as void type, which has zero size
-                dt = DataType.VOID;
+                dt = VoidDataType.dataType;
                 break;
             }
             dt = new ArrayDataType(dt, dim, -1, program.getDataTypeManager());
@@ -180,28 +181,34 @@ public class DWARF1TypeImporter {
     private DataType processClassType(DebugInfoEntry die) {
         Optional<Number> byteSizeOpt =
                 die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(ConstAttributeValue::get);
-        String name = DWARF1ImportUtils.extractName(die)
-                // FIXME: anonymous class?
-                .filter(n -> !n.equals("@class"))
-                .orElseGet(() -> "anon_" + die.getRef());
+        
+        String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
+        String ghidraTypeName;
+
+        // Check for generic or missing DWARF name patterns for classes/structs
+        if (dwarfName == null || dwarfName.equals("@class") || dwarfName.matches("^@anon(\\d+)?$")) {
+            ghidraTypeName = "@anon_" + Long.toHexString(die.getRef()); 
+            // log.appendMsg("DEBUG: Renaming generic struct/class '" + (dwarfName != null ? dwarfName : "<no-name>") +
+            //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
+        } else {
+            ghidraTypeName = dwarfName;
+        }
+
         DataTypeManager dataTypeManager = program.getDataTypeManager();
-        DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
+        DataType existingDt = dataTypeManager.getDataType(categoryPath, ghidraTypeName);
         if (existingDt != null) {
-            // already imported
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
-        // We check this here instead of at the beginning of the function
-        // because GCC can emit structs multiple times where some of the bodies are empty
+        
         if (byteSizeOpt.isEmpty()) {
             throw new IllegalArgumentException("class type is missing byte size attribute");
         }
         int size = byteSizeOpt.get().intValue();
-        StructureDataType tempDt = new StructureDataType(categoryPath, name, size, dataTypeManager);
-        // Register the type before importing fields because field can reference parent type
+        
+        StructureDataType tempDt = new StructureDataType(categoryPath, ghidraTypeName, size, dataTypeManager);
         Structure newDt = (Structure) dataTypeManager.addDataType(tempDt, DataTypeConflictHandler.DEFAULT_HANDLER);
         dwarfTypeManager.registerType(die.getRef(), newDt);
-        //log.appendMsg("Struct " + name);
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
                 case MEMBER:
@@ -211,15 +218,9 @@ public class DWARF1TypeImporter {
                     processClassTypeInheritance(newDt, childDie);
                     break;
                 case GLOBAL_VARIABLE:
-                    // TODO
-                    break;
                 case SUBROUTINE:
                 case GLOBAL_SUBROUTINE:
-                    // TODO
-                    break;
                 case TYPEDEF:
-                    // TODO?
-                    break;
                 case STRUCTURE_TYPE:
                 case ARRAY_TYPE:
                 case ENUMERATION_TYPE:
@@ -242,30 +243,37 @@ public class DWARF1TypeImporter {
 
     private void processClassTypeMember(Structure sdt, DebugInfoEntry die) {
         String memberName = DWARF1ImportUtils.extractName(die).orElse(null);
-        //log.appendMsg("Member " + memberName);
         DataType memberDt = typeExtractor.extractDataType(die);
         int memberOffset = extractMemberOffset(die);
         assert memberDt != null;
         if (memberOffset >= sdt.getLength()) {
-            // TODO: memberDt.isDynamicallySized()
             return;
         }
         sdt.replaceAtOffset(memberOffset, memberDt, -1, memberName, null);
     }
 
     private DataType processUnionType(DebugInfoEntry die) {
-        String name = DWARF1ImportUtils.extractName(die).orElseGet(() -> "anon_" + die.getRef());
+        String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
+        String ghidraTypeName;
+
+        if (dwarfName == null || dwarfName.equals("@union") || dwarfName.matches("^@anon(\\d+)?$")) {
+            ghidraTypeName = "@union_" + Long.toHexString(die.getRef());
+            // log.appendMsg("DEBUG: Renaming generic union '" + (dwarfName != null ? dwarfName : "<no-name>") +
+            //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
+        } else {
+            ghidraTypeName = dwarfName;
+        }
+
         DataTypeManager dataTypeManager = program.getDataTypeManager();
-        DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
+        DataType existingDt = dataTypeManager.getDataType(categoryPath, ghidraTypeName);
         if (existingDt != null) {
-            // already imported
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
-        UnionDataType tempUnionDt = new UnionDataType(categoryPath, name, dataTypeManager);
+        
+        UnionDataType tempUnionDt = new UnionDataType(categoryPath, ghidraTypeName, dataTypeManager);
         Union newUnionDt = (Union) dataTypeManager.addDataType(tempUnionDt, DataTypeConflictHandler.DEFAULT_HANDLER);
         dwarfTypeManager.registerType(die.getRef(), newUnionDt);
-        //log.appendMsg("Struct " + name);
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
                 case MEMBER:
@@ -280,7 +288,6 @@ public class DWARF1TypeImporter {
 
     private void processUnionTypeMember(Union union, DebugInfoEntry die) {
         String memberName = DWARF1ImportUtils.extractName(die).orElse(null);
-        //log.appendMsg("Member " + childNameOpt);
         DataType memberDt = typeExtractor.extractDataType(die);
         union.add(memberDt, memberName, null);
     }
@@ -291,17 +298,26 @@ public class DWARF1TypeImporter {
         Optional<byte[]> elementListOpt =
                 die.<BlockAttributeValue>getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
 
-        String name = DWARF1ImportUtils.extractName(die).orElseGet(() -> "anon_" + die.getRef());
+        String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
+        String ghidraEnumName;
+
+        if (dwarfName == null || dwarfName.equals("@enum") ||  dwarfName.matches("^@anon(\\d+)?$")) {
+            ghidraEnumName = "@enum_" + Long.toHexString(die.getRef());
+            // log.appendMsg("DEBUG: Renaming generic enum '" + (dwarfName != null ? dwarfName : "<no-name>") +
+            //               "' to unique Ghidra name '" + ghidraEnumName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
+        } else {
+            ghidraEnumName = dwarfName;
+        }
+
         DataTypeManager dataTypeManager = program.getDataTypeManager();
-        DataType existingDt = dataTypeManager.getDataType(categoryPath, name);
+        DataType existingDt = dataTypeManager.getDataType(categoryPath, ghidraEnumName);
         if (existingDt != null) {
-            // already imported?
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
 
         int size = byteSizeOpt.orElse(4).intValue();
-        var tempEnumDt = new EnumDataType(categoryPath, name, size, dataTypeManager);
+        var tempEnumDt = new EnumDataType(categoryPath, ghidraEnumName, size, dataTypeManager);
         if (elementListOpt.isPresent()) {
             processEnumElementList(tempEnumDt, elementListOpt.get(), size);
         }
@@ -314,8 +330,26 @@ public class DWARF1TypeImporter {
     private void processEnumElementList(EnumDataType edt, byte[] encodedElementList, int size) throws IOException {
         var bp = new ByteArrayProvider(encodedElementList);
         BinaryReader br = new BinaryReader(bp, program.isLittleEndian());
+        
         while (br.getPointerIndex() < bp.length()) {
-            long value = br.readNextInt(); // FIXME: should use machine specific FT_long size
+            long value;
+            switch (size) {
+                case 1:
+                    value = br.readNextByte() & 0xFF;
+                    break;
+                case 2:
+                    value = br.readNextShort() & 0xFFFF;
+                    break;
+                case 4:
+                    value = br.readNextInt() & 0xFFFFFFFFL;
+                    break;
+                case 8:
+                    value = br.readNextLong();
+                    break;
+                default:
+                    throw new IOException("Unsupported enum byte size: " + size);
+            }
+            
             String name = br.readNextAsciiString();
             edt.add(name, value);
         }
@@ -329,6 +363,6 @@ public class DWARF1TypeImporter {
                 atoms.get(1).getOp() == LocationAtomOp.ADD) {
             return atoms.get(0).getArg().intValue();
         }
-        throw new IllegalArgumentException("unparsable member location " + atoms);
+        throw new IllegalArgumentException("WARNING! Unparsable member location " + atoms);
     }
 }

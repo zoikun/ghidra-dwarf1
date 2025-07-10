@@ -13,6 +13,11 @@ public enum LocationAtomOp {
 	DEREF2(0x05),
 	DEREF4(0x06),
 	ADD(0x07),
+		//MWCC 
+	FPREG(0x80),
+	FPDREG(0x81),
+	DEREF8(0x82),
+
 	USER(null);
 
 	private static final int LO_USER = 0xE0;
@@ -35,10 +40,6 @@ public enum LocationAtomOp {
 		LocationAtomOp op = VALUE_MAP.get(value);
 		if (op == null) {
 			if (value >= LO_USER && value <= HI_USER) {
-				return USER;
-			}
-			// PS2 GCC uses 0x80 sometimes in local variables
-			if (value == 0x80) {
 				return USER;
 			}
 			throw new IllegalArgumentException("invalid location atom " + value);

@@ -35,4 +35,28 @@ public class DWARF1ImportUtils {
 			throw new IllegalArgumentException("Failed to parse location", e);
 		}
 	}
+
+	/**
+	 * Converts a byte array to a long value, respecting endianness.
+	 * Only converts up to 8 bytes. If `bytes` is shorter than 8, it's padded with zeros.
+	 *
+	 * @param bytes The byte array to convert.
+	 * @param isBigEndian True if the bytes should be interpreted as big-endian, false for little-endian.
+	 * @return The long value.
+	 */
+	public static long bytesToLong(byte[] bytes, boolean isBigEndian) {
+	    long value = 0;
+	    int len = Math.min(bytes.length, 8); // Only read up to 8 bytes for a long
+
+	    if (isBigEndian) {
+	        for (int i = 0; i < len; i++) {
+	            value = (value << 8) | (bytes[i] & 0xFF);
+	        }
+	    } else { // Little Endian
+	        for (int i = 0; i < len; i++) {
+	            value |= ((long) (bytes[i] & 0xFF)) << (i * 8);
+	        }
+	    }
+	    return value;
+	}
 }
