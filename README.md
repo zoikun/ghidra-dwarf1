@@ -4,7 +4,7 @@ GHIDRA DWARF1 MWCC Extension
 This extension adds DWARF1 analyzer to Ghidra (built-in Ghidra DWARF analyzer does not support this version of DWARF
 debug format).
 
-Updated from [this fork]https://github.com/dbalatoni13/ghidra-dwarf1/tree/master with these features:
+Updated from [this fork](https://github.com/dbalatoni13/ghidra-dwarf1/tree/master) with these features:
 
 1. Fixed enums parsing and imporing
 2. Anonymous enums/unions/structure/classes now will have unique names based on DIE offset in debug section
