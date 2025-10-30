@@ -133,7 +133,7 @@ public class DWARF1VariableImporter {
         }
         monitor.setMessage("Processing deferred variables...");
         monitor.setMaximum(deferredVariables.size());
-        log.appendMsg("Attempting to process " + deferredVariables.size() + " deferred variables...");
+        // log.appendMsg("Attempting to process " + deferredVariables.size() + " deferred variables...");
         for (DebugInfoEntry die : deferredVariables) {
             monitor.setProgress(deferredVariables.indexOf(die));
             processVariable(die, true); 

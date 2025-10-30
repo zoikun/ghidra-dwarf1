@@ -25,6 +25,7 @@ import ghidra.program.model.symbol.SourceType;
 import ghidra.util.exception.DuplicateNameException;
 import ghidra.util.exception.InvalidInputException;
 import ghidra.util.task.TaskMonitor;
+import ghidra.program.model.listing.CommentType;
 
 public class DWARF1FunctionImporter {
 
@@ -416,10 +417,10 @@ public class DWARF1FunctionImporter {
 
     private void addCommentAtAddress(Address addr, String comment) {
         Listing listing = dwarfProgram.getProgram().getListing();
-        String existing = listing.getComment(CodeUnit.PRE_COMMENT, addr);
+    String existing = listing.getComment(CommentType.PRE, addr);
         if (existing != null) {
             comment = existing + "\n" + comment;
         }
-        listing.setComment(addr, CodeUnit.PRE_COMMENT, comment);
+        listing.setComment(addr, CommentType.PRE, comment);
     }
 }
