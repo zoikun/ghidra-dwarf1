@@ -40,6 +40,7 @@ import ghidra.program.model.data.StructureDataType;
 import ghidra.program.model.data.Union;
 import ghidra.program.model.data.UnionDataType;
 import ghidra.program.model.data.VoidDataType;
+import ghidra.program.model.data.DataTypeComponent;
 
 public class DWARF1TypeImporter {
 
@@ -48,6 +49,8 @@ public class DWARF1TypeImporter {
     private final CategoryPath categoryPath;
     private final DWARF1TypeManager dwarfTypeManager;
     private final DWARF1TypeExtractor typeExtractor;
+
+    private final Map<String, DataType> anonAggregateCache = new HashMap<>();
 
     public DWARF1TypeImporter(DWARF1Program program, MessageLog log,
             DWARF1TypeManager dwarfTypeManager,
@@ -198,8 +201,7 @@ public class DWARF1TypeImporter {
         String ghidraTypeName;
 
         // Check for generic or missing DWARF name patterns for classes/structs
-        if (dwarfName == null || dwarfName.equals("@class") ||
-            dwarfName.matches("^@anon(\\d+)?$")) {
+        if (isAnonName(dwarfName)) {
             ghidraTypeName = "@anon_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic struct/class '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
@@ -222,16 +224,15 @@ public class DWARF1TypeImporter {
 
         StructureDataType tempDt =
             new StructureDataType(categoryPath, ghidraTypeName, size, dataTypeManager);
-        Structure newDt = (Structure) dataTypeManager.addDataType(tempDt,
-            DataTypeConflictHandler.DEFAULT_HANDLER);
-        dwarfTypeManager.registerType(die.getRef(), newDt);
+        dwarfTypeManager.registerType(die.getRef(), tempDt);
+
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
                 case MEMBER:
-                    processClassTypeMember(newDt, childDie);
+                    processClassTypeMember(tempDt, childDie);
                     break;
                 case INHERITANCE:
-                    processClassTypeInheritance(newDt, childDie);
+                    processClassTypeInheritance(tempDt, childDie);
                     break;
                 case GLOBAL_VARIABLE:
                 case SUBROUTINE:
@@ -249,6 +250,19 @@ public class DWARF1TypeImporter {
                     log.appendMsg("Unexpected child of class type: " + childDie.getTag());
             }
         }
+
+        if (isAnonName(ghidraTypeName)) {
+            DataType dedupDt = deduplicateAnonAggregate(tempDt);
+            if (dedupDt != null) {
+                dwarfTypeManager.unregisterType(die.getRef());
+                dwarfTypeManager.registerType(die.getRef(), dedupDt);
+                return dedupDt;
+            }
+        }
+
+        Structure newDt = (Structure) dataTypeManager.addDataType(
+            tempDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+        dwarfTypeManager.registerType(die.getRef(), newDt);
         return newDt;
     }
 
@@ -272,8 +286,7 @@ public class DWARF1TypeImporter {
         String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
         String ghidraTypeName;
 
-        if (dwarfName == null || dwarfName.equals("@union") ||
-            dwarfName.matches("^@anon(\\d+)?$")) {
+        if (isAnonName(dwarfName)) {
             ghidraTypeName = "@union_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic union '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
@@ -291,19 +304,31 @@ public class DWARF1TypeImporter {
 
         UnionDataType tempUnionDt =
             new UnionDataType(categoryPath, ghidraTypeName, dataTypeManager);
-        Union newUnionDt = (Union) dataTypeManager.addDataType(tempUnionDt,
-            DataTypeConflictHandler.DEFAULT_HANDLER);
-        dwarfTypeManager.registerType(die.getRef(), newUnionDt);
+
+        // populate the union before dedup
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
                 case MEMBER:
-                    processUnionTypeMember(newUnionDt, childDie);
+                    processUnionTypeMember(tempUnionDt, childDie);
                     break;
                 default:
                     log.appendMsg("Unexpected child of union type: " + childDie.getTag());
             }
         }
+
+        if (isAnonName(ghidraTypeName)) {
+            DataType dedupDt = deduplicateAnonAggregate(tempUnionDt);
+            if (dedupDt != null) {
+                dwarfTypeManager.registerType(die.getRef(), dedupDt);
+                return dedupDt;
+            }
+        }
+
+        Union newUnionDt = (Union) dataTypeManager.addDataType(
+            tempUnionDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+        dwarfTypeManager.registerType(die.getRef(), newUnionDt);
         return newUnionDt;
+
     }
 
     private void processUnionTypeMember(Union union, DebugInfoEntry die) {
@@ -321,7 +346,7 @@ public class DWARF1TypeImporter {
         String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
         String ghidraEnumName;
 
-        if (dwarfName == null || dwarfName.equals("@enum") || dwarfName.matches("^@anon(\\d+)?$")) {
+        if (isAnonName(dwarfName)) {
             ghidraEnumName = "@enum_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic enum '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraEnumName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
@@ -339,7 +364,7 @@ public class DWARF1TypeImporter {
             String commonPrefix = getLargestCommonMemberPrefix(tempEnumDt);
             Boolean isBooleanEnum = isBooleanEnum(tempEnumDt);
             // Try to rename only if enum is anonymous
-            if (commonPrefix != null && ghidraEnumName.startsWith("@enum_")) {
+            if (commonPrefix != null && isAnonName(ghidraEnumName)) {
                 try {
                     tempEnumDt.setName(commonPrefix);
                 }
@@ -348,13 +373,14 @@ public class DWARF1TypeImporter {
                         commonPrefix + "': " + e.getMessage());
                 }
             }
-            else if (isBooleanEnum && ghidraEnumName.startsWith("@enum_")) {
+            else if (isBooleanEnum && isAnonName(ghidraEnumName)) {
                 try {
                     tempEnumDt.setName("bool");
                 }
                 catch (ghidra.util.InvalidNameException e) {
-                    log.appendMsg("Failed to rename enum '" + tempEnumDt.getName() + "' to 'bool': " +
-                        e.getMessage());
+                    log.appendMsg(
+                        "Failed to rename enum '" + tempEnumDt.getName() + "' to 'bool': " +
+                            e.getMessage());
                 }
             }
         }
@@ -511,6 +537,64 @@ public class DWARF1TypeImporter {
         }
 
         return false;
+    }
+
+    private boolean isAnonName(String name) {
+        return name == null ||
+            name.isEmpty() ||
+            name.startsWith("@class") ||
+            name.startsWith("@union") ||
+            name.startsWith("@anon") ||
+            name.startsWith("@enum") ||
+            name.matches("^@anon(\\d+)?$");
+    }
+
+    /**
+     * Generate a hashable signature for a Structure or Union based on its layout.
+     */
+    private String computeAggregateSignature(DataType aggregate) {
+        StringBuilder sb = new StringBuilder();
+
+        if (aggregate instanceof StructureDataType sdt) {
+            sb.append("struct:");
+            for (DataTypeComponent c : sdt.getComponents()) {
+                sb.append(c.getFieldName())
+                        .append(':')
+                        .append(c.getDataType().getName())
+                        .append(':')
+                        .append(c.getOffset())
+                        .append(':')
+                        .append(c.getLength())
+                        .append(';');
+            }
+        }
+        else if (aggregate instanceof UnionDataType udt) {
+            sb.append("union:");
+            for (DataTypeComponent c : udt.getComponents()) {
+                sb.append(c.getFieldName())
+                        .append(':')
+                        .append(c.getDataType().getName())
+                        .append(':')
+                        .append(c.getLength())
+                        .append(';');
+            }
+        }
+
+        // More stable than String.hashCode(); optional to replace with SHA-1 if needed
+        return Integer.toHexString(sb.toString().hashCode());
+    }
+
+    /**
+     * Return an existing identical anonymous struct/union if any.
+     */
+    private DataType deduplicateAnonAggregate(DataType aggregate) {
+        String signature = computeAggregateSignature(aggregate);
+        DataType existing = anonAggregateCache.get(signature);
+        if (existing != null) {
+            return existing;
+        }
+        anonAggregateCache.put(signature, aggregate);
+        return aggregate;
     }
 
     private int extractMemberOffset(DebugInfoEntry die) {

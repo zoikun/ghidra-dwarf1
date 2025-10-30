@@ -163,6 +163,10 @@ public class DWARF1TypeManager {
         userDataTypeMap.put(ref, dt);
     }
 
+    public void unregisterType(long ref) {
+        userDataTypeMap.remove(ref);
+    }
+
     public void setTypeImporter(DWARF1TypeImporter dwarfTypeImporter) {
         this.dwarfTypeImporter = dwarfTypeImporter;
     }
