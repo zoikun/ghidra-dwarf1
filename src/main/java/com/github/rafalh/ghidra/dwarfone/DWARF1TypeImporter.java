@@ -3,9 +3,11 @@ package com.github.rafalh.ghidra.dwarfone;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 import com.github.rafalh.ghidra.dwarfone.model.AttributeName;
@@ -47,8 +49,9 @@ public class DWARF1TypeImporter {
     private final DWARF1TypeManager dwarfTypeManager;
     private final DWARF1TypeExtractor typeExtractor;
 
-    public DWARF1TypeImporter(DWARF1Program program, MessageLog log, DWARF1TypeManager dwarfTypeManager,
-                              DWARF1TypeExtractor typeExtractor) {
+    public DWARF1TypeImporter(DWARF1Program program, MessageLog log,
+            DWARF1TypeManager dwarfTypeManager,
+            DWARF1TypeExtractor typeExtractor) {
         this.program = program;
         this.log = log;
         this.dwarfTypeManager = dwarfTypeManager;
@@ -77,12 +80,14 @@ public class DWARF1TypeImporter {
                 case SET_TYPE:
                 case SUBRANGE_TYPE:
                     // TODO
-                    throw new IllegalArgumentException("Unsupported debug info entry tag: " + die.getTag());
+                    throw new IllegalArgumentException(
+                        "Unsupported debug info entry tag: " + die.getTag());
                 default:
                     // skip other tags
                     throw new IllegalArgumentException("Expected type tag, got " + die.getTag());
             }
-        } catch (Exception e) {
+        }
+        catch (Exception e) {
             throw new RuntimeException("Failed to process type debug info entry " + die, e);
         }
     }
@@ -109,7 +114,8 @@ public class DWARF1TypeImporter {
         DataTypeManager dtMgr = program.getDataTypeManager();
         DataType funDt = dtMgr.getDataType(categoryPath, funDtName);
         if (funDt == null || !(funDt instanceof FunctionDefinition)) {
-            FunctionDefinitionDataType funDefDt = new FunctionDefinitionDataType(categoryPath, funDtName, dtMgr);
+            FunctionDefinitionDataType funDefDt =
+                new FunctionDefinitionDataType(categoryPath, funDtName, dtMgr);
             funDefDt.setReturnType(returnDt);
             funDefDt.setArguments(params.toArray(new ParameterDefinition[params.size()]));
             funDt = dtMgr.addDataType(funDefDt, DataTypeConflictHandler.DEFAULT_HANDLER);
@@ -119,9 +125,10 @@ public class DWARF1TypeImporter {
     }
 
     private DataType processArrayType(DebugInfoEntry die) throws IOException {
-        byte[] subscrData = die.<BlockAttributeValue>getAttribute(AttributeName.SUBSCR_DATA)
+        byte[] subscrData = die.<BlockAttributeValue> getAttribute(AttributeName.SUBSCR_DATA)
                 .map(av -> av.get())
-                .orElseThrow(() -> new IllegalArgumentException("array type without subscr_data " + die));
+                .orElseThrow(
+                    () -> new IllegalArgumentException("array type without subscr_data " + die));
         var bp = new ByteArrayProvider(subscrData);
         List<Integer> dims = new ArrayList<>();
         DataType baseDt = null;
@@ -129,18 +136,21 @@ public class DWARF1TypeImporter {
         while (br.getPointerIndex() < bp.length()) {
             Format fmt = Format.decode(br.readNextByte());
             if (fmt == Format.ET) {
-                Map.Entry<Integer, AttributeValue> attributeEntry = AttributeUtils.readAttribute(br);
+                Map.Entry<Integer, AttributeValue> attributeEntry =
+                    AttributeUtils.readAttribute(br);
                 var at = AttributeName.decode(attributeEntry.getKey());
                 var av = attributeEntry.getValue();
                 baseDt = typeExtractor.extractDataType(at, av);
-            } else if (fmt == Format.FT_C_C) {
+            }
+            else if (fmt == Format.FT_C_C) {
                 // type of index - unused
                 FundamentalType.fromValue(br.readNextUnsignedShort());
                 int minIndex = br.readNextInt();
                 int maxIndex = br.readNextInt();
                 int numElements = maxIndex - minIndex + 1;
                 dims.add(numElements);
-            } else if (fmt == Format.FT_C_X) {
+            }
+            else if (fmt == Format.FT_C_X) {
                 // type of index - unused
                 FundamentalType.fromValue(br.readNextUnsignedShort());
                 int minIndex = br.readNextInt();
@@ -151,9 +161,10 @@ public class DWARF1TypeImporter {
                 else {
                     // TODO
                     long block = br.readNextValue(size);
-//                    int location = processBlock(block);
+                    //                    int location = processBlock(block);
                 }
-            } else {
+            }
+            else {
                 log.appendMsg("Unsupported format " + fmt + " in " + die);
                 break;
             }
@@ -180,17 +191,20 @@ public class DWARF1TypeImporter {
 
     private DataType processClassType(DebugInfoEntry die) {
         Optional<Number> byteSizeOpt =
-                die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(ConstAttributeValue::get);
-        
+            die.<ConstAttributeValue> getAttribute(AttributeName.BYTE_SIZE)
+                    .map(ConstAttributeValue::get);
+
         String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
         String ghidraTypeName;
 
         // Check for generic or missing DWARF name patterns for classes/structs
-        if (dwarfName == null || dwarfName.equals("@class") || dwarfName.matches("^@anon(\\d+)?$")) {
-            ghidraTypeName = "@anon_" + Long.toHexString(die.getRef()); 
+        if (dwarfName == null || dwarfName.equals("@class") ||
+            dwarfName.matches("^@anon(\\d+)?$")) {
+            ghidraTypeName = "@anon_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic struct/class '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
-        } else {
+        }
+        else {
             ghidraTypeName = dwarfName;
         }
 
@@ -200,14 +214,16 @@ public class DWARF1TypeImporter {
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
-        
+
         if (byteSizeOpt.isEmpty()) {
             throw new IllegalArgumentException("class type is missing byte size attribute");
         }
         int size = byteSizeOpt.get().intValue();
-        
-        StructureDataType tempDt = new StructureDataType(categoryPath, ghidraTypeName, size, dataTypeManager);
-        Structure newDt = (Structure) dataTypeManager.addDataType(tempDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+
+        StructureDataType tempDt =
+            new StructureDataType(categoryPath, ghidraTypeName, size, dataTypeManager);
+        Structure newDt = (Structure) dataTypeManager.addDataType(tempDt,
+            DataTypeConflictHandler.DEFAULT_HANDLER);
         dwarfTypeManager.registerType(die.getRef(), newDt);
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
@@ -256,11 +272,13 @@ public class DWARF1TypeImporter {
         String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
         String ghidraTypeName;
 
-        if (dwarfName == null || dwarfName.equals("@union") || dwarfName.matches("^@anon(\\d+)?$")) {
+        if (dwarfName == null || dwarfName.equals("@union") ||
+            dwarfName.matches("^@anon(\\d+)?$")) {
             ghidraTypeName = "@union_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic union '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraTypeName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
-        } else {
+        }
+        else {
             ghidraTypeName = dwarfName;
         }
 
@@ -270,9 +288,11 @@ public class DWARF1TypeImporter {
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
-        
-        UnionDataType tempUnionDt = new UnionDataType(categoryPath, ghidraTypeName, dataTypeManager);
-        Union newUnionDt = (Union) dataTypeManager.addDataType(tempUnionDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+
+        UnionDataType tempUnionDt =
+            new UnionDataType(categoryPath, ghidraTypeName, dataTypeManager);
+        Union newUnionDt = (Union) dataTypeManager.addDataType(tempUnionDt,
+            DataTypeConflictHandler.DEFAULT_HANDLER);
         dwarfTypeManager.registerType(die.getRef(), newUnionDt);
         for (DebugInfoEntry childDie : die.getChildren()) {
             switch (childDie.getTag()) {
@@ -294,43 +314,68 @@ public class DWARF1TypeImporter {
 
     private DataType processEnumType(DebugInfoEntry die) throws IOException {
         Optional<Number> byteSizeOpt =
-                die.<ConstAttributeValue>getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
+            die.<ConstAttributeValue> getAttribute(AttributeName.BYTE_SIZE).map(av -> av.get());
         Optional<byte[]> elementListOpt =
-                die.<BlockAttributeValue>getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
+            die.<BlockAttributeValue> getAttribute(AttributeName.ELEMENT_LIST).map(av -> av.get());
 
         String dwarfName = DWARF1ImportUtils.extractName(die).orElse(null);
         String ghidraEnumName;
 
-        if (dwarfName == null || dwarfName.equals("@enum") ||  dwarfName.matches("^@anon(\\d+)?$")) {
+        if (dwarfName == null || dwarfName.equals("@enum") || dwarfName.matches("^@anon(\\d+)?$")) {
             ghidraEnumName = "@enum_" + Long.toHexString(die.getRef());
             // log.appendMsg("DEBUG: Renaming generic enum '" + (dwarfName != null ? dwarfName : "<no-name>") +
             //               "' to unique Ghidra name '" + ghidraEnumName + "' (DIE Ref: 0x" + Long.toHexString(die.getRef()) + ")");
-        } else {
+        }
+        else {
             ghidraEnumName = dwarfName;
         }
 
         DataTypeManager dataTypeManager = program.getDataTypeManager();
+
+        int size = byteSizeOpt.orElse(4).intValue();
+        var tempEnumDt = new EnumDataType(categoryPath, ghidraEnumName, size, dataTypeManager);
+        if (elementListOpt.isPresent()) {
+            processEnumElementList(tempEnumDt, elementListOpt.get(), size);
+            String commonPrefix = getLargestCommonMemberPrefix(tempEnumDt);
+            Boolean isBooleanEnum = isBooleanEnum(tempEnumDt);
+            // Try to rename only if enum is anonymous
+            if (commonPrefix != null && ghidraEnumName.startsWith("@enum_")) {
+                try {
+                    tempEnumDt.setName(commonPrefix);
+                }
+                catch (ghidra.util.InvalidNameException e) {
+                    log.appendMsg("Failed to rename enum '" + tempEnumDt.getName() + "' to '" +
+                        commonPrefix + "': " + e.getMessage());
+                }
+            }
+            else if (isBooleanEnum && ghidraEnumName.startsWith("@enum_")) {
+                try {
+                    tempEnumDt.setName("bool");
+                }
+                catch (ghidra.util.InvalidNameException e) {
+                    log.appendMsg("Failed to rename enum '" + tempEnumDt.getName() + "' to 'bool': " +
+                        e.getMessage());
+                }
+            }
+        }
+
         DataType existingDt = dataTypeManager.getDataType(categoryPath, ghidraEnumName);
         if (existingDt != null) {
             dwarfTypeManager.registerType(die.getRef(), existingDt);
             return existingDt;
         }
 
-        int size = byteSizeOpt.orElse(4).intValue();
-        var tempEnumDt = new EnumDataType(categoryPath, ghidraEnumName, size, dataTypeManager);
-        if (elementListOpt.isPresent()) {
-            processEnumElementList(tempEnumDt, elementListOpt.get(), size);
-        }
-
-        DataType enumDt = dataTypeManager.addDataType(tempEnumDt, DataTypeConflictHandler.DEFAULT_HANDLER);
+        DataType enumDt =
+            dataTypeManager.addDataType(tempEnumDt, DataTypeConflictHandler.DEFAULT_HANDLER);
         dwarfTypeManager.registerType(die.getRef(), enumDt);
         return enumDt;
     }
 
-    private void processEnumElementList(EnumDataType edt, byte[] encodedElementList, int size) throws IOException {
+    private void processEnumElementList(EnumDataType edt, byte[] encodedElementList, int size)
+            throws IOException {
         var bp = new ByteArrayProvider(encodedElementList);
         BinaryReader br = new BinaryReader(bp, program.isLittleEndian());
-        
+
         while (br.getPointerIndex() < bp.length()) {
             long value;
             switch (size) {
@@ -349,10 +394,123 @@ public class DWARF1TypeImporter {
                 default:
                     throw new IOException("Unsupported enum byte size: " + size);
             }
-            
+
             String name = br.readNextAsciiString();
             edt.add(name, value);
         }
+    }
+
+    /**
+     * Calculates the longest common prefix of all enum member names,
+     * trimming leading underscores first and returning a natural prefix.
+     */
+    private String getLargestCommonMemberPrefix(EnumDataType edt) {
+        String[] names = edt.getNames();
+        if (names.length == 0) {
+            return null;
+        }
+
+        // Collect valid, underscore-trimmed names
+        List<String> validNames = new ArrayList<>();
+        for (String name : names) {
+            if (name != null && !name.isEmpty()) {
+                // Trim leading underscores for prefix alignment
+                validNames.add(name.replaceFirst("^_+", ""));
+            }
+        }
+        if (validNames.isEmpty()) {
+            return null;
+        }
+
+        // Start with the first name as reference
+        String prefix = validNames.get(0);
+
+        // Compute longest common prefix
+        for (int i = 1; i < validNames.size(); i++) {
+            String name = validNames.get(i);
+            int j = 0;
+            int max = Math.min(prefix.length(), name.length());
+            while (j < max && prefix.charAt(j) == name.charAt(j)) {
+                j++;
+            }
+            prefix = prefix.substring(0, j);
+            if (prefix.isEmpty()) {
+                return null;
+            }
+        }
+
+        // Cut at the last underscore to keep the “semantic” prefix
+        int lastSep = prefix.lastIndexOf('_');
+        if (lastSep >= 0) {
+            prefix = prefix.substring(0, lastSep);
+        }
+
+        // Reject trivial or too-short prefixes
+        if (prefix.length() < 3) {
+            return null;
+        }
+
+        return prefix;
+    }
+
+    /**
+    * Detects whether the given EnumDataType semantically represents a boolean.
+    * Recognizes patterns like FALSE=0/TRUE=1, NO=0/YES=1, OFF=0/ON=1, etc.
+    */
+    private boolean isBooleanEnum(EnumDataType edt) {
+        String[] names = edt.getNames();
+        if (names.length != 2) {
+            return false; // must have exactly 2 entries
+        }
+
+        // Collect normalized (value, name) pairs
+        Map<Long, String> norm = new HashMap<>();
+        for (String name : names) {
+            if (name == null) {
+                continue;
+            }
+            long value;
+            try {
+                value = edt.getValue(name);
+            }
+            catch (Exception e) {
+                continue;
+            }
+
+            // Normalize: remove underscores and punctuation, uppercase
+            String normalized = name
+                    .toUpperCase(Locale.ROOT)
+                    .replaceFirst("^_+", "") // remove leading underscores
+                    .replaceAll("[^A-Z0-9]", ""); // keep only alphanumerics
+
+            norm.put(value, normalized);
+        }
+
+        if (!norm.containsKey(0L) || !norm.containsKey(1L)) {
+            return false; // must have values 0 and 1
+        }
+
+        String zeroName = norm.get(0L);
+        String oneName = norm.get(1L);
+
+        // Known boolean-style pairs
+        String[][] knownPairs = {
+            { "FALSE", "TRUE" },
+            { "NO", "YES" },
+            { "OFF", "ON" },
+            { "DISABLED", "ENABLED" },
+            { "LOW", "HIGH" },
+            { "ZERO", "ONE" },
+            { "CLEAR", "SET" }
+        };
+
+        for (String[] pair : knownPairs) {
+            if (zeroName.equals(pair[0]) && oneName.equals(pair[1])) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private int extractMemberOffset(DebugInfoEntry die) {
@@ -360,7 +518,7 @@ public class DWARF1TypeImporter {
                 .orElseThrow(() -> new IllegalArgumentException("expected location in " + die));
         var atoms = location.getAtoms();
         if (atoms.size() == 2 && atoms.get(0).getOp() == LocationAtomOp.CONST &&
-                atoms.get(1).getOp() == LocationAtomOp.ADD) {
+            atoms.get(1).getOp() == LocationAtomOp.ADD) {
             return atoms.get(0).getArg().intValue();
         }
         throw new IllegalArgumentException("WARNING! Unparsable member location " + atoms);

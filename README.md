@@ -37,7 +37,7 @@ Before you begin, ensure you have the following installed:
     * **Python** (if you plan to work with PyGhidra scripts)
     * **Debugpy** (for Python debugging)
 
-#### Project Setup
+### Project Setup
 
 1.  **Set `GHIDRA_INSTALL_DIR` Environment Variable**:
     The build system relies on knowing the location of your Ghidra installation. Set the `GHIDRA_INSTALL_DIR` environment variable to the absolute path of your Ghidra installation directory.
