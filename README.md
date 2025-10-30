@@ -10,7 +10,7 @@ Updated from [this fork](https://github.com/dbalatoni13/ghidra-dwarf1/tree/maste
 2. Anonymous enums/unions/structure/classes now will have unique names based on DIE offset in debug section
 3. Fixed and (slightly) expanded code for variable imporing 
 4. Added support for DWARF1 MWCC extensions. These were used by MetroWerks CodeWarrior PS2 SDK.
-5. Updated to Ghidra 11.3.1
+5. Updated to Ghidra 11.3.2/11.4.2
 6. VSCode support
 7. Some QOL changes
 
@@ -20,7 +20,20 @@ I suggest making a backup of your Ghidra database before using it, or work on fr
 Usage
 -----
 
-Install it like any other Ghidra extension. See [Installation Guide](https://ghidra-sre.org/InstallationGuide.html#Extensions) for instructions.
+* Download the built extension from GitHub
+  * Visit the [Releases](../../releases) page, normally use the latest release
+  * Download the built extension zip file, the name will be similar to:
+    `ghidra_11.X.X_PUBLIC_YYYYMMDD_ghidra_dwarf1.zip`
+* If you don't already have Ghdira, download and install Ghidra from
+  https://ghidra-sre.org/
+* Install the extension into Ghidra
+  * Start Ghidra
+  * Open `File->Install Extensions...`
+  * Press the `+` icon found in the top right of the `Install Extensions` window
+  * Navigate to the file location where you downloaded the extension zip file
+    above and select it
+  * Press `OK`
+  * You will be prompted to restart Ghidra for the changes to take effect
 
 Build
 -----
@@ -30,7 +43,7 @@ Build
 Before you begin, ensure you have the following installed:
 
 * **Java Development Kit (JDK) 11 or later**: Ghidra typically requires a specific JDK version.
-* **Ghidra Installation**: An existing installation of Ghidra (e.g., `ghidra_11.3.1_PUBLIC`).
+* **Ghidra Installation**: An existing installation of Ghidra (e.g., `ghidra_11.X.X_PUBLIC`).
 * **Visual Studio Code**: With the following extensions installed:
     * **Extension Pack for Java** (includes Language Support for Java, Debugger for Java, etc.)
     * **Gradle for Java**
